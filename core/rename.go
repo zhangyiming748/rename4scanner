@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/zhangyiming748/finder"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,20 +31,10 @@ startAt=12
 */
 func Rename4Scanner(startAT int, root string) error {
 	// 读取目录中的所有文件
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return fmt.Errorf("读取目录失败 %s: %w", root, err)
-	}
 
 	// 过滤出符合 Scan_XXXX.ext 格式的图片文件
-	var images []string
-	re := regexp.MustCompile(`^Scan_\d+\.(jpg|jpeg|png|gif|bmp|tiff)$`)
-	for _, entry := range entries {
-		if !entry.IsDir() && re.MatchString(entry.Name()) {
-			images = append(images, filepath.Join(root, entry.Name()))
-		}
-	}
 
+	images := finder.FindAllImages(root)
 	// 按文件名排序，确保重命名顺序一致
 	sort.Strings(images)
 
