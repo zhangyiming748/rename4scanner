@@ -2,7 +2,10 @@ module rename4scanner
 
 go 1.26.1
 
-require github.com/spf13/cobra v1.10.2
+require (
+	github.com/spf13/cobra v1.10.2
+	github.com/zhangyiming748/lumberjack v0.0.1
+)
 
 require github.com/h2non/filetype v1.1.3 // indirect
 

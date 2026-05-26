@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"rename4scanner/util"
 	"rename4scanner/core"
 
 	"github.com/spf13/cobra"
@@ -13,7 +14,7 @@ func main() {
 	// startAt：起始序号偏移量
 	var root string
 	var startAt int
-
+	util.SetLog("r4s.log")
 	// 使用 cobra 构建命令行工具
 	var rootCmd = &cobra.Command{
 		Use:   "r4s",
