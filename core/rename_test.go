@@ -14,7 +14,7 @@ func TestRename4Scanner(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// 在临时目录中创建一些测试文件（模拟失败批次的文件）
+	// 在临时目录中创建一些测试文件（模拟第二批扫描的文件）
 	testFiles := []string{
 		"Scan_0001.jpg",
 		"Scan_0002.jpg",
@@ -29,25 +29,21 @@ func TestRename4Scanner(t *testing.T) {
 		}
 	}
 
-	// 创建一个"成功"文件作为基准序号，并放在同一目录（与实际场景兼容）
-	successFilePath := filepath.Join(tempDir, "Scan_0014.jpg")
-	err = os.WriteFile(successFilePath, []byte("dummy content"), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// 从成功文件中提取起始序号 (14)
+	// 假设第一批最后一个文件是 Scan_0014.jpg
+	startAT := 14
 
 	// 调用函数并确认不返回错误
-	err = Rename4Scanner(tempDir, successFilePath)
+	err = Rename4Scanner(startAT, tempDir)
 	if err != nil {
 		t.Error(err)
 	}
 
 	// 验证重命名结果：旧文件按顺序重命名为基准号后续编号
 	expectedFiles := []string{
-		"Scan_0015.jpg", // 原来的 Scan_0001.jpg
-		"Scan_0016.jpg", // 原来的 Scan_0002.jpg
-		"Scan_0017.jpg", // 原来的 Scan_0003.jpg
-		"Scan_0014.jpg", // 基准文件保持不变
+		"Scan_0015.jpg", // 原来的 Scan_0001.jpg (1 + 14)
+		"Scan_0016.jpg", // 原来的 Scan_0002.jpg (2 + 14)
+		"Scan_0017.jpg", // 原来的 Scan_0003.jpg (3 + 14)
 	}
 
 	for _, expectedFile := range expectedFiles {

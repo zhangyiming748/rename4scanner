@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,110 +10,85 @@ import (
 	"strconv"
 )
 
-// Rename4Scanner 重命名扫描失败后的文件，使其从上次成功的文件序号继续
-//
-// failedPath: 失败批次所在目录，该目录下可能有多个需要重新编号的文件。
-// successFile: 上一个成功扫描文件的全路径（用于提取当前已经使用的最大序号）。
-//
-// 该函数的行为：
-// 1. 验证输入路径是否存在
-// 2. 从 successFile 提取基准序号
-// 3. 遍历 failedPath 中与成功文件同扩展名的文件，排除基准文件自身
-// 4. 统一排序后按 Scan_XXXX.ext 规则进行连续命名（从基准序号+1开始）
-// 5. 逐个重命名，遇到错误立即返回。
-func Rename4Scanner(failedPath, successFile string) error {
-	// 检查失败文件夹是否存在
-	if _, err := os.Stat(failedPath); os.IsNotExist(err) {
-		return fmt.Errorf("错误：文件夹不存在 - %s", failedPath)
-	}
+/*
+现在的逻辑是
+我的扫描仪扫描出来的文件会自动重命名图片为Scan_0001.jpg到Scan_9999.jpg(实际上最多300张 扫描仪不能支持短时大批量扫描)
+现在第二批扫描的图片想合并到第一批扫描图片的文件夹里就会出现同名文件
+所以我想用startAt这个变量表示第二批文件夹应该被重命名的起始点
+重命名之后就应该是Scan_0001+{startAT}
+比如第一批文件夹里
+最后一个文件是Scan_0012.jpg
+startAt=12
+那么第二批文件夹里的文件应该重命名为Scan_0001+{12}.jpg 即 Scan_0013.jpg
 
-	// 检查最后一个成功文件是否存在
-	if _, err := os.Stat(successFile); os.IsNotExist(err) {
-		return fmt.Errorf("错误：文件不存在 - %s", successFile)
-	}
-
-	// 提取 successFile 的基本文件名（去除路径）
-	successFileName := filepath.Base(successFile)
-
-	// 使用正则提取文件名中的数字部分，期望匹配类似"Scan_0014.jpg"的格式
-	// matches[1] 为数字部分，matches[2] 为扩展名后缀（不包含点）
-	re := regexp.MustCompile(`_([0-9]+)\.([a-zA-Z]+)$`)
-	matches := re.FindStringSubmatch(successFileName)
-	if len(matches) < 2 {
-		return fmt.Errorf("错误：无法从文件名中提取数字 - %s", successFileName)
-	}
-
-	// 解析数字基准序号
-	baseNum, err := strconv.Atoi(matches[1])
+简化一下以上逻辑
+现在不谈第一个文件夹
+就第二个文件夹
+假设Scan_0001.jpg到Scan_0999.jpg
+这些jpg图片
+从头遍历这些文件名
+*/
+func Rename4Scanner(startAT int, root string) error {
+	// 读取目录中的所有文件
+	entries, err := os.ReadDir(root)
 	if err != nil {
-		return fmt.Errorf("错误：无法解析数字 - %s", matches[1])
+		return fmt.Errorf("读取目录失败 %s: %w", root, err)
 	}
 
-	fmt.Printf("基准数字：%d\n", baseNum)
-	fmt.Printf("开始处理文件夹：%s\n", failedPath)
-
-	// 读取失败目录下的所有项
-	files, err := os.ReadDir(failedPath)
-	if err != nil {
-		return fmt.Errorf("错误：无法读取文件夹 - %s", failedPath)
+	// 过滤出符合 Scan_XXXX.ext 格式的图片文件
+	var images []string
+	re := regexp.MustCompile(`^Scan_\d+\.(jpg|jpeg|png|gif|bmp|tiff)$`)
+	for _, entry := range entries {
+		if !entry.IsDir() && re.MatchString(entry.Name()) {
+			images = append(images, filepath.Join(root, entry.Name()))
+		}
 	}
 
-	// 只处理与基准文件同扩展名的文件
-	ext := filepath.Ext(successFileName)
-	var targetFiles []os.FileInfo
+	// 按文件名排序，确保重命名顺序一致
+	sort.Strings(images)
 
-	for _, file := range files {
-		if file.IsDir() {
-			continue // 跳过子目录
-		}
+	log.Printf("找到 %d 个图片文件", len(images))
+	for i, image := range images {
+		fmt.Println(i, image)
+		//在这里将每一个文件的绝对路径处理一下
+		//将文件名中的数字部分加startAT
+		//然后重新组成为绝对路径形式的新文件名newNmae
+		//log打印旧文件名和新文件名
 
-		if filepath.Ext(file.Name()) != ext {
-			continue // 相异扩展名跳过
-		}
+		// 获取文件名（不含路径）
+		fileName := filepath.Base(image)
 
-		// 排除成功文件本身，防止重复处理
-		if file.Name() == successFileName {
+		// 从文件名中提取数字部分
+		re := regexp.MustCompile(`Scan_(\d+)`)
+		matches := re.FindStringSubmatch(fileName)
+		if len(matches) < 2 {
+			log.Printf("跳过不符合格式的文件: %s", fileName)
 			continue
 		}
 
-		info, err := file.Info()
+		// 解析原有数字
+		oldNum, err := strconv.Atoi(matches[1])
 		if err != nil {
-			return fmt.Errorf("错误：无法获取文件信息 - %s: %v", file.Name(), err)
-		}
-		targetFiles = append(targetFiles, info)
-	}
-
-	if len(targetFiles) == 0 {
-		return fmt.Errorf("错误：文件夹中没有扩展名为 %s 的文件（排除基准文件）", ext)
-	}
-
-	// 按文件名排序以保证重命名顺序可预测、稳定
-	sort.Slice(targetFiles, func(i, j int) bool {
-		return targetFiles[i].Name() < targetFiles[j].Name()
-	})
-
-	// 从基准号 + 1 开始重命名
-	counter := baseNum + 1
-	renamedCount := 0
-
-	for _, file := range targetFiles {
-		oldPath := filepath.Join(failedPath, file.Name())
-		newFilename := fmt.Sprintf("Scan_%04d%s", counter, ext)
-		newPath := filepath.Join(failedPath, newFilename)
-
-		fmt.Printf("重命名：%s -> %s\n", file.Name(), newFilename)
-
-		if err := os.Rename(oldPath, newPath); err != nil {
-			return fmt.Errorf("错误：重命名失败 %s 到 %s: %v", oldPath, newPath, err)
+			return fmt.Errorf("解析文件序号失败 %s: %w", fileName, err)
 		}
 
-		counter++
-		renamedCount++
-	}
+		// 计算新序号
+		newNum := oldNum + startAT
 
-	fmt.Printf("处理完成！总共重命名了 %d 个文件\n", renamedCount)
-	fmt.Printf("起始编号：%d\n", baseNum+1)
-	fmt.Printf("结束编号：%d\n", counter-1)
+		// 生成新文件名，保持原有格式（4位数字）
+		newFileName := fmt.Sprintf("Scan_%04d%s", newNum, filepath.Ext(fileName))
+
+		// 组装新文件的绝对路径
+		newName := filepath.Join(filepath.Dir(image), newFileName)
+
+		// 打印旧文件名和新文件名
+		log.Printf("重命名: %s -> %s", image, newName)
+
+		// 执行重命名
+		if err := os.Rename(image, newName); err != nil {
+			return fmt.Errorf("重命名失败 %s -> %s: %w", image, newName, err)
+		}
+	}
 
 	return nil
 }
