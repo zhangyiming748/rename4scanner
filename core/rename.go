@@ -2,13 +2,14 @@ package core
 
 import (
 	"fmt"
-	"github.com/zhangyiming748/finder"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+
+	"github.com/zhangyiming748/finder"
 )
 
 /*
@@ -39,7 +40,10 @@ func Rename4Scanner(startAT int, root string) error {
 	sort.Strings(images)
 
 	log.Printf("找到 %d 个图片文件", len(images))
-	for i, image := range images {
+
+	// 从最大序号开始倒序重命名，避免文件被重复重命名
+	for i := len(images) - 1; i >= 0; i-- {
+		image := images[i]
 		fmt.Println(i, image)
 		//在这里将每一个文件的绝对路径处理一下
 		//将文件名中的数字部分加startAT
