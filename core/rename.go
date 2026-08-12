@@ -41,20 +41,19 @@ func Rename4Scanner(startAT int, root string) error {
 
 	log.Printf("找到 %d 个图片文件", len(images))
 
-	// 从最大序号开始倒序重命名，避免文件被重复重命名
-	for i := len(images) - 1; i >= 0; i-- {
-		image := images[i]
-		fmt.Println(i, image)
-		//在这里将每一个文件的绝对路径处理一下
-		//将文件名中的数字部分加startAT
-		//然后重新组成为绝对路径形式的新文件名newNmae
-		//log打印旧文件名和新文件名
+	re := regexp.MustCompile(`Scan_(\d+)`)
 
+	// 第一遍遍历：只计算每个文件的目标名，不执行任何重命名
+	type renamePlan struct {
+		src string
+		dst string
+	}
+	var plans []renamePlan
+	for _, image := range images {
 		// 获取文件名（不含路径）
 		fileName := filepath.Base(image)
 
 		// 从文件名中提取数字部分
-		re := regexp.MustCompile(`Scan_(\d+)`)
 		matches := re.FindStringSubmatch(fileName)
 		if len(matches) < 2 {
 			log.Printf("跳过不符合格式的文件: %s", fileName)
@@ -76,12 +75,46 @@ func Rename4Scanner(startAT int, root string) error {
 		// 组装新文件的绝对路径
 		newName := filepath.Join(filepath.Dir(image), newFileName)
 
+		plans = append(plans, renamePlan{src: image, dst: newName})
+	}
+
+	// 冲突预检：发现任何文件会被覆盖就发出警告并终止，不执行重命名
+	sourceSet := make(map[string]bool, len(plans))
+	for _, p := range plans {
+		sourceSet[p.src] = true
+	}
+	conflicts := 0
+	firstSrc := make(map[string]string, len(plans))
+	for _, p := range plans {
+		// 多个文件被重命名到同一个目标名，后执行的会覆盖先执行的
+		if src, ok := firstSrc[p.dst]; ok {
+			log.Printf("警告: %s 和 %s 都会被重命名为 %s，其中一个文件会被覆盖", src, p.src, p.dst)
+			conflicts++
+			continue
+		}
+		firstSrc[p.dst] = p.src
+		// 目标名已被一个不参与重命名的文件占用，执行会将其覆盖
+		if !sourceSet[p.dst] {
+			if _, err := os.Stat(p.dst); err == nil {
+				log.Printf("警告: 目标文件 %s 已存在且不在本次重命名范围内，%s 会覆盖它", p.dst, p.src)
+				conflicts++
+			}
+		}
+	}
+	if conflicts > 0 {
+		return fmt.Errorf("预检发现 %d 处重命名冲突，已终止操作以防止文件被覆盖，请检查 --start-at 参数是否正确", conflicts)
+	}
+
+	// 从最大序号开始倒序重命名，避免文件被重复重命名
+	for i := len(plans) - 1; i >= 0; i-- {
+		fmt.Println(i, plans[i].src)
+
 		// 打印旧文件名和新文件名
-		log.Printf("重命名: %s -> %s", image, newName)
+		log.Printf("重命名: %s -> %s", plans[i].src, plans[i].dst)
 
 		// 执行重命名
-		if err := os.Rename(image, newName); err != nil {
-			return fmt.Errorf("重命名失败 %s -> %s: %w", image, newName, err)
+		if err := os.Rename(plans[i].src, plans[i].dst); err != nil {
+			return fmt.Errorf("重命名失败 %s -> %s: %w", plans[i].src, plans[i].dst, err)
 		}
 	}
 
